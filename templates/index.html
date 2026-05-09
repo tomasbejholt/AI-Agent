@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tomas Chat – Agent</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #533483 100%);
+      overflow-x: hidden;
+      padding: 40px 20px;
+    }
+
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.35;
+      animation: float 8s ease-in-out infinite;
+      pointer-events: none;
+    }
+    body::before {
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, #7b2ff7, transparent);
+      top: -100px; left: -100px;
+    }
+    body::after {
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, #0ea5e9, transparent);
+      bottom: -100px; right: -100px;
+      animation-delay: -4s;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(30px); }
+    }
+
+    /* ── Wrapper ─────────────────────────────────────── */
+    .wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 22px;
+      width: 100%;
+      max-width: 1060px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .top-info { text-align: center; }
+    .top-info h2 {
+      font-size: 24px; font-weight: 700;
+      color: white; margin-bottom: 6px; letter-spacing: -0.3px;
+    }
+    .top-info p {
+      font-size: 13.5px; color: rgba(255,255,255,0.45); line-height: 1.6;
+    }
+
+    /* ── Main layout ─────────────────────────────────── */
+    .main-layout {
+      display: flex;
+      align-items: flex-start;
+      gap: 18px;
+      width: 100%;
+    }
+
+    /* ── Chat column ─────────────────────────────────── */
+    .chat-column {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .chat-box {
+      width: 100%;
+      height: 68vh;
+      display: flex;
+      flex-direction: column;
+      background: rgba(255,255,255,0.07);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 20px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 16px 22px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .header .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #7b2ff7; box-shadow: 0 0 10px #7b2ff7;
+    }
+    .header h1 {
+      font-size: 15px; font-weight: 600;
+      color: rgba(255,255,255,0.9); flex: 1; letter-spacing: 0.2px;
+    }
+    .clear-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.14);
+      color: rgba(255,255,255,0.45);
+      font-size: 11.5px; padding: 5px 12px;
+      border-radius: 8px; cursor: pointer; transition: all 0.2s;
+    }
+    .clear-btn:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.8); }
+
+    .messages {
+      flex: 1; overflow-y: auto; padding: 18px;
+      display: flex; flex-direction: column; gap: 12px;
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .message {
+      padding: 11px 15px; border-radius: 14px;
+      max-width: 80%; line-height: 1.6; font-size: 14px;
+      animation: fadeUp 0.2s ease;
+    }
+    .user {
+      background: linear-gradient(135deg, #7b2ff7, #0ea5e9);
+      color: white; align-self: flex-end; border-bottom-right-radius: 4px;
+      box-shadow: 0 4px 15px rgba(123,47,247,0.3);
+    }
+    .bot {
+      background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.88);
+      align-self: flex-start; border: 1px solid rgba(255,255,255,0.12);
+      border-bottom-left-radius: 4px;
+    }
+
+    /* ── Tool blocks in chat ─────────────────────────── */
+    .tool-block {
+      align-self: flex-start; width: 96%;
+      border-radius: 12px; overflow: hidden;
+      animation: fadeUp 0.2s ease;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .tb-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px;
+      background: rgba(123,47,247,0.18);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 11.5px; color: rgba(255,255,255,0.5);
+    }
+    .tb-header .tb-icon { font-size: 14px; }
+    .tb-header .tb-label { color: rgba(255,255,255,0.7); font-weight: 600; }
+    .tb-header .tb-detail {
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: 'Courier New', monospace; color: #a78bfa;
+    }
+    .tb-body {
+      padding: 10px 14px;
+      background: rgba(0,0,0,0.3);
+      font-family: 'Courier New', monospace; font-size: 12px;
+      color: #7effd4; white-space: pre-wrap; word-break: break-word;
+      max-height: 200px; overflow-y: auto;
+    }
+    .tb-body.search-body { color: rgba(255,255,255,0.75); font-family: inherit; font-size: 12.5px; }
+    .tb-screenshot { padding: 10px 14px; background: rgba(0,0,0,0.3); }
+    .tb-screenshot .cam-icon { font-size: 28px; display: block; text-align: center; opacity: 0.4; }
+
+    .input-row {
+      display: flex; padding: 14px; gap: 10px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      background: rgba(0,0,0,0.15);
+    }
+    input {
+      flex: 1; padding: 10px 15px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 10px; font-size: 14px; color: white; outline: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    input::placeholder { color: rgba(255,255,255,0.3); }
+    input:focus { border-color: rgba(123,47,247,0.7); background: rgba(255,255,255,0.11); }
+    button.send-btn {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #7b2ff7, #0ea5e9);
+      color: white; border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      box-shadow: 0 4px 14px rgba(123,47,247,0.4);
+    }
+    button.send-btn:hover { opacity: 0.9; }
+    button.send-btn:active { transform: scale(0.97); }
+
+    /* ── Agent panel ─────────────────────────────────── */
+    .agent-panel {
+      width: 290px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel-card {
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    .panel-header-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+    }
+    .agent-status-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #22c55e; box-shadow: 0 0 8px #22c55e;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .agent-status-dot.thinking {
+      background: #f59e0b;
+      box-shadow: 0 0 8px #f59e0b;
+      animation: pulse-dot 0.8s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+    .agent-title {
+      font-size: 14px; font-weight: 700;
+      color: rgba(255,255,255,0.9); flex: 1;
+    }
+    .model-tag {
+      font-size: 10.5px; font-weight: 600;
+      background: linear-gradient(135deg, #7b2ff7, #0ea5e9);
+      color: white; padding: 3px 9px; border-radius: 20px;
+    }
+
+    .section-label {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 1px;
+      color: rgba(255,255,255,0.3); margin-bottom: 10px;
+    }
+
+    /* Tools grid */
+    .tools-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .tool-item {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 5px; padding: 10px 6px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      transition: all 0.25s;
+      cursor: default;
+    }
+    .tool-item.active {
+      background: rgba(123,47,247,0.2);
+      border-color: rgba(123,47,247,0.5);
+      box-shadow: 0 0 14px rgba(123,47,247,0.25);
+      animation: tool-pulse 0.7s ease-in-out infinite;
+    }
+    @keyframes tool-pulse {
+      0%, 100% { box-shadow: 0 0 10px rgba(123,47,247,0.2); }
+      50%       { box-shadow: 0 0 22px rgba(123,47,247,0.5); }
+    }
+    .tool-item .ti-icon { font-size: 20px; }
+    .tool-item .ti-name {
+      font-size: 10.5px; color: rgba(255,255,255,0.5);
+      text-align: center; line-height: 1.3;
+    }
+    .tool-item.active .ti-name { color: rgba(255,255,255,0.85); }
+
+    /* Activity log */
+    .activity-log {
+      display: flex; flex-direction: column; gap: 6px;
+      max-height: 220px; overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;
+    }
+    .log-empty {
+      font-size: 12px; color: rgba(255,255,255,0.2);
+      text-align: center; padding: 16px 0;
+    }
+    .log-entry {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 7px 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 8px;
+      animation: fadeUp 0.2s ease;
+    }
+    .log-entry .le-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .log-entry .le-body { flex: 1; min-width: 0; }
+    .log-entry .le-label {
+      font-size: 11px; font-weight: 600;
+      color: rgba(255,255,255,0.7); margin-bottom: 1px;
+    }
+    .log-entry .le-detail {
+      font-size: 10.5px; color: rgba(255,255,255,0.35);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-family: 'Courier New', monospace;
+    }
+    .log-entry .le-time {
+      font-size: 10px; color: rgba(255,255,255,0.2); flex-shrink: 0;
+    }
+
+    /* ── Security panel ─────────────────────────────── */
+    .sec-list {
+      display: flex; flex-direction: column; gap: 7px;
+    }
+    .sec-item {
+      display: flex; align-items: flex-start; gap: 9px;
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 9px;
+    }
+    .sec-item .si-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .sec-item .si-body { flex: 1; min-width: 0; }
+    .sec-item .si-title {
+      font-size: 11.5px; font-weight: 600;
+      color: rgba(255,255,255,0.75); margin-bottom: 2px;
+    }
+    .sec-item .si-desc {
+      font-size: 10.5px; color: rgba(255,255,255,0.35); line-height: 1.4;
+    }
+    .sec-badge {
+      font-size: 9.5px; font-weight: 700;
+      background: rgba(34,197,94,0.18);
+      color: #4ade80;
+      border: 1px solid rgba(34,197,94,0.3);
+      padding: 2px 7px; border-radius: 20px; flex-shrink: 0;
+    }
+
+    /* ── Confirmation modal ──────────────────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .modal-backdrop.visible {
+      opacity: 1; pointer-events: all;
+    }
+    .modal-box {
+      background: rgba(26,20,50,0.92);
+      border: 1px solid rgba(255,200,0,0.3);
+      border-radius: 18px;
+      padding: 28px 28px 22px;
+      max-width: 420px; width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,200,0,0.1);
+      transform: translateY(10px);
+      transition: transform 0.2s;
+    }
+    .modal-backdrop.visible .modal-box { transform: translateY(0); }
+    .modal-warn-icon {
+      font-size: 32px; display: block;
+      text-align: center; margin-bottom: 14px;
+    }
+    .modal-title {
+      font-size: 16px; font-weight: 700; color: #fcd34d;
+      text-align: center; margin-bottom: 10px;
+    }
+    .modal-desc {
+      font-size: 13px; color: rgba(255,255,255,0.55);
+      text-align: center; line-height: 1.6; margin-bottom: 16px;
+    }
+    .modal-prompt {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 10px 14px;
+      font-size: 13px; color: rgba(255,255,255,0.8);
+      font-style: italic; margin-bottom: 20px;
+      word-break: break-word; line-height: 1.5;
+    }
+    .modal-btns {
+      display: flex; gap: 10px; justify-content: flex-end;
+    }
+    .modal-btns button {
+      padding: 9px 20px; border-radius: 9px;
+      font-size: 13.5px; font-weight: 600; cursor: pointer;
+      border: none; transition: opacity 0.2s;
+    }
+    .btn-cancel {
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.6);
+    }
+    .btn-cancel:hover { opacity: 0.8; }
+    .btn-confirm {
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      color: white;
+      box-shadow: 0 4px 14px rgba(239,68,68,0.35);
+    }
+    .btn-confirm:hover { opacity: 0.9; }
+
+    /* ── Terminal modal ──────────────────────────────── */
+    .term-backdrop {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .term-backdrop.visible { opacity: 1; pointer-events: all; }
+
+    .term-window {
+      width: min(780px, 94vw);
+      height: min(540px, 85vh);
+      display: flex; flex-direction: column;
+      background: #0d0d0d;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+      transform: translateY(12px);
+      transition: transform 0.2s;
+    }
+    .term-backdrop.visible .term-window { transform: translateY(0); }
+
+    .term-titlebar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px;
+      background: #1a1a1a;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+    .term-dots { display: flex; gap: 6px; }
+    .term-dots span {
+      width: 12px; height: 12px; border-radius: 50%;
+    }
+    .term-dots span:nth-child(1) { background: #ff5f57; }
+    .term-dots span:nth-child(2) { background: #febc2e; }
+    .term-dots span:nth-child(3) { background: #28c840; }
+    .term-title {
+      flex: 1; text-align: center;
+      font-size: 12px; color: rgba(255,255,255,0.4);
+      font-family: 'Courier New', monospace;
+    }
+    .term-close {
+      background: none; border: none;
+      color: rgba(255,255,255,0.3); font-size: 16px;
+      cursor: pointer; padding: 0; line-height: 1;
+      transition: color 0.2s;
+    }
+    .term-close:hover { color: rgba(255,255,255,0.7); box-shadow: none; }
+
+    .term-output {
+      flex: 1; overflow-y: auto; padding: 14px 16px;
+      font-family: 'Courier New', monospace; font-size: 13px;
+      color: #d4d4d4; white-space: pre-wrap; word-break: break-word;
+      line-height: 1.55;
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;
+    }
+    .term-output .t-agent  { color: #7effd4; }
+    .term-output .t-tool   { color: #fbbf24; }
+    .term-output .t-output { color: #a3a3a3; }
+    .term-output .t-user   { color: #818cf8; }
+    .term-output .t-system { color: rgba(255,255,255,0.3); }
+
+    .term-input-row {
+      display: flex; align-items: center; gap: 0;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      background: #111; flex-shrink: 0;
+    }
+    .term-prompt {
+      padding: 0 10px 0 14px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px; color: #22c55e; flex-shrink: 0;
+    }
+    .term-input-row input {
+      flex: 1; background: transparent; border: none;
+      color: #d4d4d4; font-family: 'Courier New', monospace;
+      font-size: 13px; padding: 11px 0; outline: none;
+    }
+    .term-input-row input::placeholder { color: rgba(255,255,255,0.2); }
+    .term-send {
+      background: none; border: none; border-left: 1px solid rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.3); font-size: 18px;
+      padding: 8px 14px; cursor: pointer;
+      transition: color 0.2s; box-shadow: none;
+    }
+    .term-send:hover { color: #22c55e; }
+
+    .term-restart-btn {
+      margin: 8px auto 0;
+      display: block;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.4);
+      font-size: 11.5px; padding: 5px 14px;
+      border-radius: 8px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .term-restart-btn:hover { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.75); }
+
+    /* Terminal open button */
+    .terminal-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 10px; cursor: pointer;
+      font-size: 13px; color: rgba(255,255,255,0.7);
+      transition: all 0.2s;
+    }
+    .terminal-btn:hover { background: rgba(255,255,255,0.13); color: white; }
+    .terminal-btn .tb-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #22c55e; box-shadow: 0 0 6px #22c55e;
+    }
+
+    /* ── Footer ──────────────────────────────────────── */
+    .footer-note {
+      font-size: 11.5px; color: rgba(255,255,255,0.2); text-align: center;
+    }
+
+    /* ── Responsive ──────────────────────────────────── */
+    @media (max-width: 800px) {
+      .main-layout { flex-direction: column; }
+      .agent-panel { width: 100%; }
+      .tools-grid { grid-template-columns: repeat(4, 1fr); }
+      .activity-log { max-height: 140px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Terminal modal -->
+  <div class="term-backdrop" id="termBackdrop">
+    <div class="term-window">
+      <div class="term-titlebar">
+        <div class="term-dots"><span></span><span></span><span></span></div>
+        <div class="term-title">agent.py — AI Agent Terminal</div>
+        <button class="term-close" onclick="closeTerminal()">✕</button>
+      </div>
+      <div class="term-output" id="termOutput"></div>
+      <div class="term-input-row">
+        <span class="term-prompt" id="termPrompt">❯</span>
+        <input id="termInput" type="text" placeholder="Skriv och tryck Enter..." autocomplete="off" />
+        <button class="term-send" onclick="termSend()">↵</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation modal -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-box">
+      <span class="modal-warn-icon">⚠️</span>
+      <div class="modal-title">Känslig åtgärd</div>
+      <div class="modal-desc">Din prompt verkar innehålla en potentiellt farlig åtgärd.<br>Är du säker på att du vill fortsätta?</div>
+      <div class="modal-prompt" id="modalPromptText"></div>
+      <div class="modal-btns">
+        <button class="btn-cancel" id="modalCancel">Avbryt</button>
+        <button class="btn-confirm" id="modalConfirm">Ja, fortsätt</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrapper">
+
+    <div class="top-info">
+      <h2>Tomas Chat &mdash; AI Agent</h2>
+      <p>Personlig assistent med PowerShell, webbsökning, filhantering, HTTP, minne och skärmdump.</p>
+    </div>
+
+    <div class="main-layout">
+
+      <!-- Chat -->
+      <div class="chat-column">
+        <div class="chat-box">
+          <div class="header">
+            <div class="dot"></div>
+            <h1>AI Assistent</h1>
+            <button class="terminal-btn" onclick="openTerminal()">
+              <span class="tb-dot"></span> Terminal
+            </button>
+            <button class="clear-btn" onclick="resetSession()">Ny session</button>
+          </div>
+          <div class="messages" id="messages"></div>
+          <div class="input-row">
+            <input id="input" type="text" placeholder="Skriv en fråga eller ge agenten ett uppdrag..." autofocus />
+            <button class="send-btn" onclick="send()">Skicka</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent panel -->
+      <div class="agent-panel">
+
+        <!-- Status + model -->
+        <div class="panel-card">
+          <div class="panel-header-row">
+            <span class="agent-status-dot" id="agentDot"></span>
+            <span class="agent-title">Agent</span>
+            <span class="model-tag">GPT-4o</span>
+          </div>
+          <div class="section-label">VERKTYG</div>
+          <div class="tools-grid" id="toolsGrid"></div>
+        </div>
+
+        <!-- Security panel -->
+        <div class="panel-card">
+          <div class="section-label">SÄKERHET</div>
+          <div class="sec-list">
+            <div class="sec-item">
+              <span class="si-icon">🚫</span>
+              <div class="si-body">
+                <div class="si-title">Blocklist</div>
+                <div class="si-desc">14 förbjudna kommandomönster — format, rm -rf, bcdedit, registry m.fl.</div>
+              </div>
+              <span class="sec-badge">PÅ</span>
+            </div>
+            <div class="sec-item">
+              <span class="si-icon">🛡️</span>
+              <div class="si-body">
+                <div class="si-title">Skyddade sökvägar</div>
+                <div class="si-desc">Kan ej skriva till C:\Windows, Program Files, System32</div>
+              </div>
+              <span class="sec-badge">PÅ</span>
+            </div>
+            <div class="sec-item">
+              <span class="si-icon">✋</span>
+              <div class="si-body">
+                <div class="si-title">Bekräftelse</div>
+                <div class="si-desc">Frågar innan känsliga prompts skickas (radera, formatera, stänga av m.fl.)</div>
+              </div>
+              <span class="sec-badge">PÅ</span>
+            </div>
+            <div class="sec-item">
+              <span class="si-icon">📋</span>
+              <div class="si-body">
+                <div class="si-title">Kommandolog</div>
+                <div class="si-desc">Alla åtgärder sparas i command_log.txt — blockerade märks BLOCKED</div>
+              </div>
+              <span class="sec-badge">PÅ</span>
+            </div>
+            <div class="sec-item">
+              <span class="si-icon">🤖</span>
+              <div class="si-body">
+                <div class="si-title">AI-instruktioner</div>
+                <div class="si-desc">6 inbyggda säkerhetsregler i systemprompten</div>
+              </div>
+              <span class="sec-badge">PÅ</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity log -->
+        <div class="panel-card">
+          <div class="section-label">AKTIVITETSLOGG</div>
+          <div class="activity-log" id="activityLog">
+            <div class="log-empty" id="logEmpty">Ingen aktivitet ännu</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="footer-note">Körs lokalt &mdash; data skickas bara till OpenAI</div>
+  </div>
+
+  <script>
+    const TOOLS_INFO = [
+      { id: "run_bash",        icon: "💻", label: "PowerShell" },
+      { id: "web_search",      icon: "🔍", label: "Webbsökning" },
+      { id: "read_file",       icon: "📄", label: "Läsa fil" },
+      { id: "write_file",      icon: "💾", label: "Skriva fil" },
+      { id: "save_memory",     icon: "🧠", label: "Spara minne" },
+      { id: "read_memory",     icon: "🧠", label: "Läsa minne" },
+      { id: "http_request",    icon: "🌐", label: "HTTP" },
+      { id: "take_screenshot", icon: "📷", label: "Skärmdump" },
+    ];
+
+    // ── Build tools grid ──────────────────────────────
+    const grid = document.getElementById("toolsGrid");
+    TOOLS_INFO.forEach(t => {
+      const el = document.createElement("div");
+      el.className = "tool-item";
+      el.id = "tool-" + t.id;
+      el.innerHTML = `<span class="ti-icon">${t.icon}</span><span class="ti-name">${t.label}</span>`;
+      grid.appendChild(el);
+    });
+
+    // ── Sensitive prompt detection ────────────────────
+    const SENSITIVE_PATTERNS = [
+      { re: /\b(radera|ta bort|delete|remove)\b/i,          label: "Radera/ta bort" },
+      { re: /\bformat(era)?\b/i,                             label: "Formatera" },
+      { re: /\b(stäng av|shutdown|starta om|restart)\b/i,   label: "Stäng av / starta om" },
+      { re: /\b(installera|install)\b/i,                     label: "Installera" },
+      { re: /\b(töm|rensa).{0,30}(mapp|disk|katalog|fil)\b/i, label: "Töm/rensa" },
+      { re: /\b(ändra|byt).{0,20}(lösenord|password)\b/i,   label: "Ändra lösenord" },
+      { re: /\bregistr(y|et)\b/i,                            label: "Registret" },
+      { re: /system32/i,                                     label: "System32" },
+    ];
+
+    function getSensitiveMatch(text) {
+      for (const p of SENSITIVE_PATTERNS) {
+        if (p.re.test(text)) return p.label;
+      }
+      return null;
+    }
+
+    // Returns true if user confirms, false if cancelled
+    function askConfirm(promptText) {
+      return new Promise(resolve => {
+        document.getElementById("modalPromptText").textContent = `"${promptText}"`;
+        const backdrop = document.getElementById("modalBackdrop");
+        backdrop.classList.add("visible");
+
+        function cleanup(result) {
+          backdrop.classList.remove("visible");
+          document.getElementById("modalConfirm").removeEventListener("click", onConfirm);
+          document.getElementById("modalCancel").removeEventListener("click", onCancel);
+          backdrop.removeEventListener("click", onBackdrop);
+          resolve(result);
+        }
+        const onConfirm  = () => cleanup(true);
+        const onCancel   = () => cleanup(false);
+        const onBackdrop = (e) => { if (e.target === backdrop) cleanup(false); };
+
+        document.getElementById("modalConfirm").addEventListener("click", onConfirm);
+        document.getElementById("modalCancel").addEventListener("click", onCancel);
+        backdrop.addEventListener("click", onBackdrop);
+      });
+    }
+
+    // ── State ─────────────────────────────────────────
+    const input    = document.getElementById("input");
+    const messages = document.getElementById("messages");
+    const agentDot = document.getElementById("agentDot");
+    const actLog   = document.getElementById("activityLog");
+    const logEmpty = document.getElementById("logEmpty");
+    let sending = false;
+
+    input.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+
+    // ── Send ──────────────────────────────────────────
+    async function send() {
+      if (sending) return;
+      const q = input.value.trim();
+      if (!q) return;
+
+      const match = getSensitiveMatch(q);
+      if (match) {
+        const confirmed = await askConfirm(q);
+        if (!confirmed) return;
+      }
+
+      input.value = "";
+      sending = true;
+      setThinking(true);
+
+      addMessage(q, "user");
+      const thinking = addMessage("Tänker...", "bot");
+
+      try {
+        const res = await fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: q }),
+        });
+        const data = await res.json();
+
+        thinking.remove();
+
+        for (const action of (data.actions || [])) {
+          addToolBlock(action);
+          addLogEntry(action);
+          await flashTool(action.tool);
+        }
+
+        addMessage(data.answer, "bot");
+      } catch (e) {
+        thinking.textContent = "Något gick fel — försök igen.";
+      } finally {
+        sending = false;
+        setThinking(false);
+      }
+    }
+
+    // ── Reset ─────────────────────────────────────────
+    async function resetSession() {
+      await fetch("/reset", { method: "POST" });
+      messages.innerHTML = "";
+      actLog.innerHTML = "";
+      actLog.appendChild(logEmpty);
+      logEmpty.style.display = "";
+    }
+
+    // ── Helpers ───────────────────────────────────────
+    function setThinking(on) {
+      agentDot.classList.toggle("thinking", on);
+    }
+
+    function addMessage(text, who) {
+      const div = document.createElement("div");
+      div.className = "message " + who;
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+      return div;
+    }
+
+    function addToolBlock(action) {
+      const block = document.createElement("div");
+      block.className = "tool-block";
+
+      const header = document.createElement("div");
+      header.className = "tb-header";
+      header.innerHTML = `
+        <span class="tb-icon">${esc(action.icon)}</span>
+        <span class="tb-label">${esc(action.label)}</span>
+        <span class="tb-detail">${esc(action.detail)}</span>`;
+
+      block.appendChild(header);
+
+      if (action.is_screenshot) {
+        const body = document.createElement("div");
+        body.className = "tb-screenshot";
+        body.innerHTML = `<span class="cam-icon">📷</span>`;
+        block.appendChild(body);
+      } else {
+        const body = document.createElement("div");
+        body.className = "tb-body" + (action.tool === "web_search" ? " search-body" : "");
+        body.textContent = action.output;
+        block.appendChild(body);
+      }
+
+      messages.appendChild(block);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function addLogEntry(action) {
+      logEmpty.style.display = "none";
+      const now = new Date();
+      const time = now.getHours().toString().padStart(2,"0") + ":" +
+                   now.getMinutes().toString().padStart(2,"0");
+
+      const entry = document.createElement("div");
+      entry.className = "log-entry";
+      entry.innerHTML = `
+        <span class="le-icon">${esc(action.icon)}</span>
+        <div class="le-body">
+          <div class="le-label">${esc(action.label)}</div>
+          <div class="le-detail">${esc(action.detail)}</div>
+        </div>
+        <span class="le-time">${time}</span>`;
+
+      actLog.appendChild(entry);
+      actLog.scrollTop = actLog.scrollHeight;
+    }
+
+    function flashTool(toolId) {
+      return new Promise(resolve => {
+        const el = document.getElementById("tool-" + toolId);
+        if (!el) { resolve(); return; }
+        el.classList.add("active");
+        setTimeout(() => { el.classList.remove("active"); resolve(); }, 1400);
+      });
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    // ── Terminal ──────────────────────────────────────
+    let termSid = null;
+    let termEs  = null;
+
+    async function openTerminal() {
+      document.getElementById("termBackdrop").classList.add("visible");
+      document.getElementById("termOutput").innerHTML = "";
+      document.getElementById("termInput").value = "";
+      await startAgentSession();
+      document.getElementById("termInput").focus();
+    }
+
+    function closeTerminal() {
+      document.getElementById("termBackdrop").classList.remove("visible");
+      stopAgentSession();
+    }
+
+    document.getElementById("termBackdrop").addEventListener("click", e => {
+      if (e.target === document.getElementById("termBackdrop")) closeTerminal();
+    });
+
+    document.getElementById("termInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") termSend();
+    });
+
+    async function startAgentSession() {
+      if (termEs) { termEs.close(); termEs = null; }
+
+      const res = await fetch("/terminal/start", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = await res.json();
+      termSid = data.sid;
+
+      // Show working directory
+      const cwd = data.cwd || "";
+      document.querySelector(".term-title").textContent = cwd;
+      document.getElementById("termPrompt").textContent = "PS " + cwd.split("\\").pop() + " ❯";
+      termWrite(cwd + "\n", "t-system");
+      termWrite("─".repeat(48) + "\n", "t-system");
+
+      termEs = new EventSource(`/terminal/stream?sid=${termSid}`);
+      termEs.onmessage = e => {
+        const d = JSON.parse(e.data);
+        if (d.done) {
+          termWrite("\n[Session avslutad] ", "t-system");
+          addRestartButton();
+          termEs.close(); termEs = null;
+          return;
+        }
+        if (d.text) termWrite(d.text);
+      };
+    }
+
+    async function stopAgentSession() {
+      if (termEs) { termEs.close(); termEs = null; }
+      if (termSid) {
+        fetch("/terminal/stop", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sid: termSid }) });
+        termSid = null;
+      }
+    }
+
+    async function termSend() {
+      const inp = document.getElementById("termInput");
+      const text = inp.value;
+      inp.value = "";
+      if (!termSid) return;
+      await fetch("/terminal/input", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sid: termSid, text }),
+      });
+    }
+
+    function termWrite(text, cls) {
+      const out = document.getElementById("termOutput");
+      const span = document.createElement("span");
+      if (cls) span.className = cls;
+      span.textContent = text;
+      out.appendChild(span);
+      out.scrollTop = out.scrollHeight;
+    }
+
+    function addRestartButton() {
+      const out = document.getElementById("termOutput");
+      const btn = document.createElement("button");
+      btn.className = "term-restart-btn";
+      btn.textContent = "Ny agent-session";
+      btn.onclick = async () => { btn.remove(); await startAgentSession(); };
+      out.appendChild(btn);
+      out.scrollTop = out.scrollHeight;
+    }
+  </script>
+</body>
+</html>
