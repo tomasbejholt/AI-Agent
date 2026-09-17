@@ -14,6 +14,7 @@ import threading
 import queue
 import uuid
 import os
+import traceback
 
 load_dotenv()
 
@@ -23,6 +24,17 @@ client = OpenAI()
 BASE_DIR     = Path(__file__).parent
 MEMORY_FILE  = BASE_DIR / "agent_memory.json"
 COMMAND_LOG  = BASE_DIR / "command_log.txt"
+ERROR_LOG    = BASE_DIR / "error_log.txt"
+
+
+@app.errorhandler(Exception)
+def _log_unhandled_error(e):
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(ERROR_LOG, "a", encoding="utf-8") as f:
+        f.write(f"[{ts}] {request.method} {request.path}\n")
+        f.write(traceback.format_exc())
+        f.write("\n")
+    return jsonify({"answer": f"⚠️ Internt fel: {e}", "actions": []}), 500
 
 SYSTEM_PROMPT = (
     "Du är en personlig AI-assistent som körs lokalt på användarens Windows-dator. "
@@ -47,6 +59,7 @@ TOOL_META = {
     "read_memory":     {"icon": "🧠", "label": "Läser minne"},
     "http_request":    {"icon": "🌐", "label": "HTTP"},
     "take_screenshot": {"icon": "📷", "label": "Skärmdump"},
+    "screenshot_website": {"icon": "🖼️", "label": "Webbskärmdump"},
 }
 
 TOOLS = [
@@ -162,6 +175,24 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "screenshot_website",
+            "description": (
+                "Öppnar en webbsida i en headless webbläsare, renderar den och tar en "
+                "skärmdump av hur sidan faktiskt ser ut. Kan valfritt spara bilden som PNG."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL till webbsidan att skärmdumpa"},
+                    "save_path": {"type": "string", "description": "Valfri absolut sökväg att spara PNG-bilden till"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 conversation_history = []
@@ -235,7 +266,8 @@ def run_bash(command: str) -> str:
         out = result.stdout.strip()
         if result.stderr.strip():
             out += f"\nSTDERR:\n{result.stderr.strip()}"
-        return out or "(inget output)"
+        out = out[:4000] if out else "(inget output)"
+        return out
     except subprocess.TimeoutExpired:
         return "Kommandot avbröts — tog längre än 30 sekunder."
     except Exception as e:
@@ -322,6 +354,40 @@ def capture_screenshot() -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def screenshot_website(url: str, save_path: str = "") -> tuple[str, str]:
+    """Renders a URL headless and screenshots it. Returns (status_message, base64_png)."""
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        url = "https://" + url
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(url, wait_until="networkidle", timeout=20000)
+            png_bytes = page.screenshot()
+            browser.close()
+    except Exception as e:
+        return f"Fel: {e}", ""
+
+    msg = f"Skärmdump av {url} tagen."
+    if save_path:
+        blocked = _is_blocked_path(save_path)
+        if blocked:
+            return f"⛔ {blocked}", ""
+        try:
+            p_path = Path(save_path)
+            p_path.parent.mkdir(parents=True, exist_ok=True)
+            p_path.write_bytes(png_bytes)
+            msg += f" Sparad: {save_path}"
+            _log_command("screenshot_website", f"{url} -> {save_path}")
+        except Exception as e:
+            return f"{msg} Men kunde inte spara: {e}", base64.b64encode(png_bytes).decode()
+    else:
+        _log_command("screenshot_website", url)
+
+    return msg, base64.b64encode(png_bytes).decode()
+
+
 def build_system_prompt() -> str:
     prompt = SYSTEM_PROMPT
     mem = load_memory()
@@ -353,6 +419,9 @@ def dispatch(name: str, args: dict):
     if name == "take_screenshot":
         b64 = capture_screenshot()
         return "Skärmdump tagen och analyserad.", True, b64
+    if name == "screenshot_website":
+        msg, b64 = screenshot_website(args["url"], args.get("save_path", ""))
+        return msg, bool(b64), (b64 or None)
     return "Okänt verktyg.", False, None
 
 
@@ -374,12 +443,15 @@ def ask():
     while True:
         messages = [{"role": "system", "content": build_system_prompt()}] + conversation_history
 
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto",
-        )
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                tools=TOOLS,
+                tool_choice="auto",
+            )
+        except Exception as e:
+            return jsonify({"answer": f"⚠️ Kunde inte nå OpenAI: {e}", "actions": actions})
         msg = response.choices[0].message
 
         if msg.tool_calls:
@@ -401,7 +473,10 @@ def ask():
                 args = json.loads(tc.function.arguments)
                 meta = TOOL_META.get(name, {"icon": "🔧", "label": name})
 
-                output, is_screenshot, b64 = dispatch(name, args)
+                try:
+                    output, is_screenshot, b64 = dispatch(name, args)
+                except Exception as e:
+                    output, is_screenshot, b64 = f"Fel: {e}", False, None
 
                 detail = (
                     args.get("command") or args.get("query") or
@@ -418,11 +493,18 @@ def ask():
                 })
 
                 if is_screenshot:
+                    # Tool-role messages may only contain text (the OpenAI API rejects
+                    # image_url content there) — so send the image as a follow-up user
+                    # message right after the plain-text tool result.
                     conversation_history.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
+                        "content": "Skärmdump tagen.",
+                    })
+                    conversation_history.append({
+                        "role": "user",
                         "content": [
-                            {"type": "text", "text": "Skärmdump tagen."},
+                            {"type": "text", "text": "Här är skärmdumpen:"},
                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
                         ],
                     })
@@ -550,4 +632,4 @@ def terminal_stop():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(port=5733, debug=False)

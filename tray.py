@@ -7,7 +7,7 @@ import winreg
 from PIL import Image, ImageDraw
 import pystray
 
-FLASK_PORT = 5000
+FLASK_PORT = 5733
 APP_NAME = "Tomas Chat"
 CHAT_URL = f"http://127.0.0.1:{FLASK_PORT}"
 
@@ -95,8 +95,6 @@ def build_menu():
 
 
 def main():
-    set_autostart(True)
-
     flask_thread = threading.Thread(target=start_flask, daemon=True)
     flask_thread.start()
 

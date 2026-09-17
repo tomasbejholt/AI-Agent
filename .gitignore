@@ -3,6 +3,8 @@ venv/
 __pycache__/
 *.pyc
 command_log.txt
+error_log.txt
 .claude/
 agent_memory.json
 *.lnk
+.pytest_cache/
